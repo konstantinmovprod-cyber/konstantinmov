@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <title>СУПЕРЫ | Клуб</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="topbar glass">
+    <div class="logo">СУПЕР<span class="gold">Ы</span>.</div>
+    <button class="icon-btn" data-go="profile" aria-label="Профиль">
+      <img id="top-avatar" class="avatar-sm" alt="" hidden>
+      <i id="top-avatar-icon" class="fas fa-user"></i>
+    </button>
+  </header>
+
+  <main id="app">
+    <!-- HOME -->
+    <section class="screen active" data-screen="home">
+      <div class="hero">
+        <img id="hero-img" class="hero-img" alt="">
+        <div class="hero-overlay"></div>
+        <div class="hero-content reveal">
+          <p class="eyebrow">Закрытый клуб</p>
+          <h1 class="hero-title"><span class="text-gold-gradient" id="club-name"></span></h1>
+          <p class="hero-sub" id="club-tagline"></p>
+          <div class="btn-row">
+            <button class="btn btn-gold" data-go="join">Вступить</button>
+            <button class="btn btn-ghost" data-go="events"><i class="fas fa-calendar"></i> События</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="container">
+        <div class="stats reveal" id="stats"></div>
+
+        <div class="section-head reveal">
+          <h2 class="section-title">Ближайшее</h2>
+          <button class="link" data-go="events">Все →</button>
+        </div>
+        <div id="next-event"></div>
+
+        <div class="section-head reveal">
+          <h2 class="section-title">Что даёт клуб</h2>
+        </div>
+        <div class="grid-2" id="perks"></div>
+
+        <div class="about reveal">
+          <h2 class="eyebrow">О клубе</h2>
+          <h3 class="about-title">СУПЕРЫ<br><span class="serif-italic">COMMUNITY</span></h3>
+          <div class="divider"></div>
+          <p class="muted" id="club-about"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- EVENTS -->
+    <section class="screen" data-screen="events">
+      <div class="container">
+        <div class="page-head">
+          <span class="ghost-title">Events</span>
+          <h2 class="page-title">События</h2>
+        </div>
+        <div class="chips" id="event-filters"></div>
+        <div class="stack" id="events-list"></div>
+      </div>
+    </section>
+
+    <!-- EVENT DETAIL -->
+    <section class="screen" data-screen="event">
+      <div id="event-detail"></div>
+    </section>
+
+    <!-- CLUB / MEMBERS -->
+    <section class="screen" data-screen="club">
+      <div class="container">
+        <div class="page-head">
+          <span class="ghost-title">Members</span>
+          <h2 class="page-title">Участники</h2>
+        </div>
+        <div class="search glass">
+          <i class="fas fa-search"></i>
+          <input id="member-search" type="search" placeholder="Поиск по имени или сфере">
+        </div>
+        <div class="grid-2" id="members"></div>
+      </div>
+    </section>
+
+    <!-- JOIN -->
+    <section class="screen" data-screen="join">
+      <div class="container">
+        <div class="page-head">
+          <span class="ghost-title">Join</span>
+          <h2 class="page-title">Вступить</h2>
+        </div>
+        <div class="stack" id="tiers"></div>
+
+        <form class="form offer-box" id="join-form" novalidate>
+          <span class="corner tl"></span><span class="corner tr"></span>
+          <span class="corner bl"></span><span class="corner br"></span>
+          <h3 class="form-title">Заявка в клуб</h3>
+          <label>Имя
+            <input name="name" required placeholder="Как к вам обращаться">
+          </label>
+          <label>Контакт (Telegram / телефон)
+            <input name="contact" required placeholder="@username или +7...">
+          </label>
+          <label>Чем занимаетесь
+            <input name="occupation" placeholder="Сфера, проект, компания">
+          </label>
+          <label>Тариф
+            <select name="tier" id="tier-select"></select>
+          </label>
+          <label>Что хотите получить от клуба
+            <textarea name="goal" rows="3" placeholder="Коротко о запросе"></textarea>
+          </label>
+          <button class="btn btn-gold btn-block" type="submit">Отправить заявку</button>
+          <p class="hint">Менеджер свяжется с вами в Telegram в течение 24 часов.</p>
+        </form>
+      </div>
+    </section>
+
+    <!-- PROFILE -->
+    <section class="screen" data-screen="profile">
+      <div class="container">
+        <div class="page-head">
+          <span class="ghost-title">Profile</span>
+          <h2 class="page-title">Профиль</h2>
+        </div>
+
+        <div class="member-card" id="member-card"></div>
+
+        <div class="section-head">
+          <h2 class="section-title">Мои события</h2>
+        </div>
+        <div class="stack" id="my-events"></div>
+
+        <div class="stack gap-sm mt">
+          <a class="row-link glass" id="contact-manager" target="_blank" rel="noopener">
+            <i class="fab fa-telegram-plane gold"></i><span>Написать менеджеру</span><i class="fas fa-chevron-right"></i>
+          </a>
+          <a class="row-link glass" id="contact-email">
+            <i class="fas fa-envelope gold"></i><span>Почта клуба</span><i class="fas fa-chevron-right"></i>
+          </a>
+          <button class="row-link glass" id="reset-data">
+            <i class="fas fa-rotate-left gold"></i><span>Сбросить данные (демо)</span><i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom navigation -->
+  <nav class="tabbar glass">
+    <button class="tab active" data-go="home"><i class="fas fa-house"></i><span>Главная</span></button>
+    <button class="tab" data-go="events"><i class="fas fa-calendar"></i><span>События</span></button>
+    <button class="tab" data-go="club"><i class="fas fa-users"></i><span>Клуб</span></button>
+    <button class="tab" data-go="join"><i class="fas fa-crown"></i><span>Вступить</span></button>
+    <button class="tab" data-go="profile"><i class="fas fa-user"></i><span>Профиль</span></button>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
