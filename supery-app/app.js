@@ -4,19 +4,15 @@
   const C = window.SUPERY_CONFIG;
   const tg = window.Telegram && window.Telegram.WebApp;
   const inTelegram = !!(tg && tg.initData);
-  const STORE_KEY = "supery:v1";
+  const STORE_KEY = "supery:v2";
 
-  // ---------- Telegram setup ----------
+  // ---------- Telegram ----------
   if (tg) {
     tg.ready();
     tg.expand();
-    try {
-      tg.setHeaderColor("#050505");
-      tg.setBackgroundColor("#050505");
-    } catch (_) {}
+    try { tg.setHeaderColor("#020202"); tg.setBackgroundColor("#020202"); } catch (_) {}
   }
   const tgUser = (inTelegram && tg.initDataUnsafe && tg.initDataUnsafe.user) || null;
-
   const haptic = (type) => {
     try {
       if (!tg || !tg.HapticFeedback) return;
@@ -25,45 +21,28 @@
     } catch (_) {}
   };
 
-  // ---------- State (localStorage, MVP) ----------
-  const defaultState = () => ({
-    registrations: [],
-    application: null, // { tier, sentAt }
-    memberNo: String(Math.floor(1000 + Math.random() * 9000)),
-  });
+  // ---------- State (localStorage) ----------
+  const defaultState = () => ({ done: {}, power: null, subscribeRequestedAt: null });
   let state;
-  try {
-    state = Object.assign(defaultState(), JSON.parse(localStorage.getItem(STORE_KEY)) || {});
-  } catch (_) {
-    state = defaultState();
-  }
-  const save = () => {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (_) {}
-  };
+  try { state = Object.assign(defaultState(), JSON.parse(localStorage.getItem(STORE_KEY)) || {}); }
+  catch (_) { state = defaultState(); }
+  const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (_) {} };
 
   // ---------- Helpers ----------
-  const $ = (s, root = document) => root.querySelector(s);
-  const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
-  const esc = (v) =>
-    String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+  const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const pad = (n) => String(n).padStart(2, "0");
+  const key = (n, i) => `${n}:${i}`;
 
-  const fmtDate = (iso) =>
-    new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", weekday: "short" });
-  const fmtTime = (iso) =>
-    new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-
-  const isRegistered = (id) => state.registrations.includes(id);
-  const seatsTaken = (ev) => ev.taken + (isRegistered(ev.id) ? 1 : 0);
-  const upcoming = () =>
-    C.events.slice().sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  const userName = () =>
-    tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") : "Гость клуба";
-
-  const currentTier = () => {
-    const id = state.application ? state.application.tier : "guest";
-    return C.tiers.find((t) => t.id === id) || C.tiers[0];
-  };
+  const levelDone = (lvl) => lvl.topics.filter((_, i) => state.done[key(lvl.n, i)]).length;
+  const totalTopics = C.path.reduce((s, l) => s + l.topics.length, 0);
+  const doneTopics = () => C.path.reduce((s, l) => s + levelDone(l), 0);
+  const levelsComplete = () => C.path.filter((l) => levelDone(l) === l.topics.length).length;
+  const nextLevel = () => C.path.find((l) => levelDone(l) < l.topics.length) || null;
+  const power = () => C.powers.find((p) => p.id === state.power) || null;
+  const userName = () => tgUser ? tgUser.first_name || "супер" : "супер";
 
   let toastTimer;
   const toast = (msg) => {
@@ -71,338 +50,288 @@
     el.textContent = msg;
     el.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
   };
 
   const openTelegram = (username, text) => {
     const url = `https://t.me/${username}${text ? "?text=" + encodeURIComponent(text) : ""}`;
-    if (tg && tg.openTelegramLink && inTelegram) tg.openTelegramLink(url);
+    if (inTelegram && tg.openTelegramLink) tg.openTelegramLink(url);
     else window.open(url, "_blank");
   };
 
+  function sendLead(payload) {
+    if (!C.club.leadWebhook) return;
+    fetch(C.club.leadWebhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...payload,
+        telegramUser: tgUser,
+        initData: inTelegram ? tg.initData : null, // проверяйте подпись на сервере
+        progress: { done: doneTopics(), total: totalTopics, power: state.power },
+        createdAt: new Date().toISOString(),
+      }),
+    }).catch(() => {});
+  }
+
   // ---------- Navigation ----------
-  const history = [];
+  const stack = [];
   let current = "home";
+  const TAB_OF = { level: "path", powers: "path" };
 
   function go(screen, opts = {}) {
-    if (screen === current && !opts.force) return;
-    if (!opts.back) history.push(current);
+    if (!opts.back && screen !== current) stack.push(current);
     current = screen;
     $$(".screen").forEach((s) => s.classList.toggle("active", s.dataset.screen === screen));
-    $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.go === (screen === "event" ? "events" : screen)));
+    $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.go === (TAB_OF[screen] || screen)));
     window.scrollTo(0, 0);
-
-    if (screen === "profile") renderProfile();
-    if (screen === "events") renderEvents();
-
-    if (tg && tg.BackButton) {
-      screen === "home" ? tg.BackButton.hide() : tg.BackButton.show();
-    }
+    render();
+    if (tg && tg.BackButton) screen === "home" ? tg.BackButton.hide() : tg.BackButton.show();
     haptic("light");
   }
-
-  function back() {
-    const prev = history.pop() || "home";
-    go(prev, { back: true, force: true });
-  }
-
+  const back = () => go(stack.pop() || "home", { back: true });
   if (tg && tg.BackButton) tg.BackButton.onClick(back);
 
   document.addEventListener("click", (e) => {
-    const target = e.target.closest("[data-go]");
-    if (target) { e.preventDefault(); go(target.dataset.go); }
+    const t = e.target.closest("[data-go]");
+    if (t) {
+      e.preventDefault();
+      if (t.classList.contains("tab")) stack.length = 0;
+      go(t.dataset.go);
+      return;
+    }
+    const lv = e.target.closest("[data-level]");
+    if (lv) openLevel(+lv.dataset.level);
   });
 
   // ---------- Home ----------
   function renderHome() {
-    $("#hero-img").src = C.club.heroImage;
+    $("#handle").textContent = C.club.handle;
     $("#club-name").textContent = C.club.name;
-    $("#club-tagline").textContent = C.club.tagline;
-    $("#club-about").textContent = C.club.about;
+    $("#club-subtitle").textContent = C.club.subtitle;
+    $("#quote").textContent = `«${C.quote}»`;
 
-    $("#stats").innerHTML = C.stats
-      .map((s) => `<div class="stat"><b>${esc(s.value)}</b><span>${esc(s.label)}</span></div>`)
+    const nl = nextLevel();
+    const pct = Math.round((doneTopics() / totalTopics) * 100);
+    $("#continue-card").innerHTML = nl
+      ? `
+        <div class="lb-top">
+          <span class="eyebrow"><i class="dot"></i> ${doneTopics() ? "продолжить путь" : "начни путь"}</span>
+          <span class="num dark">${pad(nl.n)}</span>
+        </div>
+        <div class="mini-bar"></div>
+        <h3>${esc(nl.title)}</h3>
+        <p>${esc(nl.intro)}</p>
+        <div class="progress"><div style="width:${pct}%"></div></div>
+        <button class="btn btn-dark" data-level="${nl.n}">${doneTopics() ? "продолжить" : "начать"} →</button>`
+      : `
+        <div class="lb-top"><span class="eyebrow"><i class="dot"></i> путь пройден</span><span class="num dark">10</span></div>
+        <div class="mini-bar"></div>
+        <h3>ты — супер</h3>
+        <p>весь путь 0–10 пройден. дальше — новая связка каждый месяц.</p>
+        <button class="btn btn-dark" data-go="club">в клуб →</button>`;
+
+    $("#formula").innerHTML = C.formula
+      .map((s, i) => `<div class="step card"><span class="num">${pad(i + 1)}</span><span>${esc(s)}</span></div>`)
       .join("");
 
-    $("#perks").innerHTML = C.perks
-      .map(
-        (p, i) => `
-        <div class="perk glass reveal" style="animation-delay:${i * 80}ms">
-          <i class="fas ${esc(p.icon)}"></i>
-          <h3>${esc(p.title)}</h3>
-          <p>${esc(p.text)}</p>
-        </div>`
-      )
-      .join("");
-
-    const next = upcoming()[0];
-    $("#next-event").innerHTML = next ? eventCard(next) : `<div class="empty">Скоро анонсируем новые события</div>`;
+    $("#feed-preview").innerHTML = feedItem(C.feed[0], 0);
   }
 
-  // ---------- Events ----------
-  let eventFilter = "Все";
-
-  function eventCard(ev) {
-    const taken = seatsTaken(ev);
-    const pct = Math.min(100, Math.round((taken / ev.seats) * 100));
-    const left = Math.max(0, ev.seats - taken);
+  function feedItem(f, i) {
+    const d = new Date(f.date).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
     return `
-      <article class="event-card reveal" data-event="${esc(ev.id)}">
-        <div class="cover">
-          <img src="${esc(ev.image)}" alt="" loading="lazy">
-          ${isRegistered(ev.id) ? `<span class="badge registered">Вы идёте</span>` : ""}
-          ${ev.membersOnly ? `<span class="badge">Members only</span>` : ""}
+      <div class="card feed-item">
+        <span class="num">${pad(i + 1)}</span>
+        <div>
+          <div class="ft">${esc(f.type)}</div>
+          <h4>${esc(f.title)}</h4>
+          <div class="fd">${esc(d)}</div>
         </div>
-        <div class="event-body">
-          <div class="event-cat">${esc(ev.category)}</div>
-          <h3 class="event-title">${esc(ev.title)}</h3>
-          <div class="meta">
-            <span><i class="far fa-calendar"></i>${esc(fmtDate(ev.date))} · ${esc(fmtTime(ev.date))}</span>
-            <span><i class="fas fa-location-dot"></i>${esc(ev.place)}</span>
-          </div>
-          <div class="progress"><div style="width:${pct}%"></div></div>
-          <div class="seats">${left > 0 ? `Осталось мест: ${left} из ${ev.seats}` : "Мест нет — лист ожидания"}</div>
-        </div>
-      </article>`;
+      </div>`;
   }
 
-  function renderEvents() {
-    const cats = ["Все", ...new Set(C.events.map((e) => e.category))];
-    $("#event-filters").innerHTML = cats
-      .map((c) => `<button class="chip ${c === eventFilter ? "active" : ""}" data-filter="${esc(c)}">${esc(c)}</button>`)
-      .join("");
-    const list = upcoming().filter((e) => eventFilter === "Все" || e.category === eventFilter);
-    $("#events-list").innerHTML = list.length ? list.map(eventCard).join("") : `<div class="empty">Нет событий в этой категории</div>`;
+  // ---------- Path map ----------
+  function renderMap() {
+    const pw = state.power;
+    $("#map").innerHTML =
+      `<div class="map-root"><b>${esc(C.club.name)}</b><span>${esc(C.club.tagline)}</span></div>` +
+      C.path
+        .map((l) => {
+          const d = levelDone(l);
+          const full = d === l.topics.length;
+          const focus = pw && l.power === pw;
+          return `
+          <div class="lvl ${l.color} ${focus ? "focus" : ""}">
+            ${focus ? `<span class="power-tag">твоя сила</span>` : ""}
+            <button class="lvl-node" data-level="${l.n}">
+              <i class="fas ${esc(l.icon)} ic"></i>
+              <span class="tt"><em>${l.n}.</em>${esc(l.title)}</span>
+              <span class="cnt ${full ? "done" : ""}">${full ? '<i class="fas fa-check"></i>' : `${d}/${l.topics.length}`}</span>
+            </button>
+            <div class="topics">
+              ${l.topics.map((t, i) => `<span class="topic ${state.done[key(l.n, i)] ? "done" : ""}">${esc(t)}</span>`).join("")}
+            </div>
+          </div>`;
+        })
+        .join("");
   }
 
-  $("#event-filters").addEventListener("click", (e) => {
-    const chip = e.target.closest("[data-filter]");
-    if (!chip) return;
-    eventFilter = chip.dataset.filter;
-    haptic("light");
-    renderEvents();
-  });
+  // ---------- Level detail ----------
+  let openN = 0;
+  function openLevel(n) {
+    openN = n;
+    if (current === "level") { render(); window.scrollTo(0, 0); haptic("light"); }
+    else go("level");
+  }
 
-  document.addEventListener("click", (e) => {
-    const card = e.target.closest("[data-event]");
-    if (card) openEvent(card.dataset.event);
-  });
+  function renderLevel() {
+    const l = C.path.find((x) => x.n === openN);
+    if (!l) return;
+    const prev = C.path.find((x) => x.n === l.n - 1);
+    const next = C.path.find((x) => x.n === l.n + 1);
+    const d = levelDone(l);
+    const extra =
+      l.n === 2
+        ? `<button class="btn btn-lime" data-go="powers">${power() ? `суперсила: ${esc(power().title)} · сменить` : "выбрать суперсилу →"}</button>`
+        : l.n === 10
+        ? `<button class="btn btn-lime" data-go="club">открыть жизнь клуба →</button>`
+        : "";
 
-  function openEvent(id, opts = {}) {
-    const ev = C.events.find((x) => x.id === id);
-    if (!ev) return;
-    const reg = isRegistered(ev.id);
-    const locked = ev.membersOnly && currentTier().id !== "resident";
-    const left = Math.max(0, ev.seats - seatsTaken(ev));
-
-    let action;
-    if (reg) action = `<button class="btn btn-ghost btn-block" id="ev-action" data-action="cancel">Отменить запись</button>`;
-    else if (locked) action = `<button class="btn btn-outline-gold btn-block" data-go="join"><i class="fas fa-lock"></i> Только для резидентов</button>`;
-    else if (left === 0) action = `<button class="btn btn-ghost btn-block" id="ev-action" data-action="wait">В лист ожидания</button>`;
-    else action = `<button class="btn btn-gold btn-block" id="ev-action" data-action="register">Записаться</button>`;
-
-    $("#event-detail").innerHTML = `
-      <div class="detail-hero">
-        <button class="back" id="ev-back" aria-label="Назад"><i class="fas fa-arrow-left"></i></button>
-        <img src="${esc(ev.image)}" alt="">
+    $("#level-detail").innerHTML = `
+      <button class="back" id="lv-back"><i class="fas fa-arrow-left"></i> путь</button>
+      <div class="lv-head">
+        <span class="num">${pad(l.n)}</span>
+        <div>
+          <span class="eyebrow"><i class="dot"></i> уровень ${l.n} · ${d}/${l.topics.length}</span>
+          <h2 class="page-title" style="margin:6px 0 0">${esc(l.title)}</h2>
+        </div>
       </div>
-      <div class="detail-body">
-        <div class="event-cat">${esc(ev.category)}</div>
-        <h1>${esc(ev.title)}</h1>
-        <div class="meta">
-          <span><i class="far fa-calendar"></i>${esc(fmtDate(ev.date))} · ${esc(fmtTime(ev.date))}</span>
-          <span><i class="fas fa-location-dot"></i>${esc(ev.place)}</span>
-          <span><i class="fas fa-user-group"></i>${seatsTaken(ev)} / ${ev.seats} участников</span>
-        </div>
-        <p class="muted">${esc(ev.description)}</p>
-        ${action}
-        <button class="btn btn-ghost btn-block mt" id="ev-ask"><i class="fab fa-telegram-plane"></i> Задать вопрос</button>
+      <div class="bar" style="margin-top:18px"></div>
+      <p class="lead" style="margin-bottom:20px">${esc(l.intro)}</p>
+      <div class="lessons">
+        ${l.topics.map((t, i) => {
+          const done = !!state.done[key(l.n, i)];
+          return `
+          <button class="lesson ${done ? "done" : ""}" data-topic="${i}">
+            <span class="chk"><i class="fas fa-check"></i></span>
+            <span class="ln"><b>${esc(t)}</b><small>урок ${l.n}.${i + 1} · ${done ? "пройдено" : "отметь, когда пройдёшь"}</small></span>
+          </button>`;
+        }).join("")}
+      </div>
+      ${extra}
+      <div class="nav-row mt">
+        ${prev ? `<button class="btn btn-outline" data-level="${prev.n}">← ${pad(prev.n)}</button>` : ""}
+        ${next ? `<button class="btn btn-outline" data-level="${next.n}">${pad(next.n)} →</button>` : ""}
       </div>`;
 
-    $("#ev-back").onclick = back;
-    $("#ev-ask").onclick = () => openTelegram(C.club.managerTelegram, `Вопрос по событию «${ev.title}»`);
-    const btn = $("#ev-action");
-    if (btn) btn.onclick = () => toggleRegistration(ev, btn.dataset.action);
-
-    if (!opts.rerender) go("event", { force: true });
-  }
-
-  function toggleRegistration(ev, action) {
-    if (action === "cancel") {
-      state.registrations = state.registrations.filter((x) => x !== ev.id);
-      toast("Запись отменена");
-      haptic("medium");
-    } else {
-      state.registrations.push(ev.id);
-      toast(action === "wait" ? "Вы в листе ожидания" : "Вы записаны! Напомним за день");
-      haptic("success");
-      sendLead({ type: "event_registration", eventId: ev.id, eventTitle: ev.title });
-    }
-    save();
-    renderHome();
-    openEvent(ev.id, { rerender: true });
-  }
-
-  // ---------- Members ----------
-  function renderMembers(q = "") {
-    const query = q.trim().toLowerCase();
-    const list = C.members.filter((m) => !query || (m.name + " " + m.role).toLowerCase().includes(query));
-    $("#members").innerHTML = list.length
-      ? list
-          .map(
-            (m) => `
-          <div class="member glass">
-            <img src="${esc(m.photo)}" alt="" loading="lazy">
-            <h3>${esc(m.name)}</h3>
-            <p>${esc(m.role)}</p>
-          </div>`
-          )
-          .join("")
-      : `<div class="empty">Никого не нашли</div>`;
-  }
-  $("#member-search").addEventListener("input", (e) => renderMembers(e.target.value));
-
-  // ---------- Join ----------
-  function renderTiers() {
-    const selected = $("#tier-select").value || "resident";
-    $("#tiers").innerHTML = C.tiers
-      .map(
-        (t) => `
-        <div class="tier ${t.featured ? "featured" : ""} ${t.id === selected ? "selected" : ""}" data-tier="${esc(t.id)}">
-          ${t.featured ? `<span class="badge">Лучший выбор</span>` : ""}
-          <h3>${esc(t.name)}</h3>
-          <div class="price">${esc(t.price)}</div>
-          <ul>${t.features.map((f) => `<li><i class="fas fa-check"></i>${esc(f)}</li>`).join("")}</ul>
-        </div>`
-      )
-      .join("");
-  }
-
-  function initJoin() {
-    $("#tier-select").innerHTML = C.tiers
-      .map((t) => `<option value="${esc(t.id)}">${esc(t.name)} — ${esc(t.price)}</option>`)
-      .join("");
-    $("#tier-select").value = "resident";
-    renderTiers();
-
-    const form = $("#join-form");
-    if (tgUser) {
-      form.name.value = userName();
-      if (tgUser.username) form.contact.value = "@" + tgUser.username;
-    }
-
-    $("#tiers").addEventListener("click", (e) => {
-      const card = e.target.closest("[data-tier]");
-      if (!card) return;
-      $("#tier-select").value = card.dataset.tier;
-      renderTiers();
-      haptic("light");
-      form.scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#lv-back").onclick = back;
+    $$("#level-detail [data-topic]").forEach((b) => {
+      b.onclick = () => {
+        const k = key(l.n, +b.dataset.topic);
+        if (state.done[k]) delete state.done[k];
+        else state.done[k] = true;
+        save();
+        const nowDone = levelDone(l) === l.topics.length;
+        if (state.done[k] && nowDone) { haptic("success"); toast(`уровень ${l.n} пройден 🔥`); }
+        else haptic("light");
+        renderLevel();
+      };
     });
-    $("#tier-select").addEventListener("change", renderTiers);
+  }
 
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      let ok = true;
-      ["name", "contact"].forEach((n) => {
-        const bad = !form[n].value.trim();
-        form[n].classList.toggle("invalid", bad);
-        if (bad) ok = false;
-      });
-      if (!ok) { haptic("error"); toast("Заполните имя и контакт"); return; }
+  // ---------- Powers ----------
+  function renderPowers() {
+    $("#powers").innerHTML = C.powers
+      .map((p) => `
+        <button class="power ${state.power === p.id ? "selected" : ""}" data-power="${esc(p.id)}">
+          <i class="fas ${esc(p.icon)}"></i>
+          <span><b>${esc(p.title)}</b><small>${esc(p.text)}</small></span>
+        </button>`)
+      .join("");
+    $$("#powers [data-power]").forEach((b) => {
+      b.onclick = () => {
+        state.power = b.dataset.power;
+        // выбор суперсилы закрывает урок «выбор суперсилы» на уровне 2
+        const lvl2 = C.path.find((l) => l.n === 2);
+        const idx = lvl2 ? lvl2.topics.indexOf("выбор суперсилы") : -1;
+        if (idx >= 0) state.done[key(2, idx)] = true;
+        save();
+        haptic("success");
+        toast(`суперсила: ${power().title}`);
+        renderPowers();
+      };
+    });
+  }
 
-      const data = Object.fromEntries(new FormData(form).entries());
-      const tier = C.tiers.find((t) => t.id === data.tier);
-      state.application = { tier: data.tier, sentAt: new Date().toISOString() };
+  // ---------- Club ----------
+  function renderClub() {
+    $("#feed").innerHTML = C.feed.map(feedItem).join("");
+    const s = C.subscription;
+    const requested = !!state.subscribeRequestedAt;
+    $("#sub-card").innerHTML = `
+      <div class="lb-top">
+        <span class="eyebrow"><i class="dot"></i> ${esc(s.title)}</span>
+        <span class="num dark"><i class="fas fa-crown"></i></span>
+      </div>
+      <div class="mini-bar"></div>
+      <div class="price">${esc(s.price)}<small>${esc(s.period)}</small></div>
+      <ul>${s.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
+      <button class="btn btn-dark" id="subscribe">${requested ? "заявка отправлена · написать ещё" : "вступить в клуб →"}</button>`;
+    $("#subscribe").onclick = () => {
+      state.subscribeRequestedAt = new Date().toISOString();
       save();
       haptic("success");
-
-      sendLead({ type: "application", ...data });
-
-      const text =
-        `Заявка в клуб ${C.club.name}\n` +
-        `Имя: ${data.name}\nКонтакт: ${data.contact}\n` +
-        (data.occupation ? `Сфера: ${data.occupation}\n` : "") +
-        `Тариф: ${tier ? tier.name : data.tier}\n` +
-        (data.goal ? `Запрос: ${data.goal}` : "");
-
-      toast("Заявка отправлена!");
-      if (!C.club.leadWebhook) openTelegram(C.club.managerTelegram, text);
-      go("profile");
-    });
-  }
-
-  function sendLead(payload) {
-    if (!C.club.leadWebhook) return;
-    const body = {
-      ...payload,
-      club: C.club.name,
-      telegramUser: tgUser,
-      initData: inTelegram ? tg.initData : null, // проверяйте подпись на сервере
-      createdAt: new Date().toISOString(),
+      sendLead({ type: "subscription" });
+      const u = tgUser ? `${tgUser.first_name || ""}${tgUser.username ? " (@" + tgUser.username + ")" : ""}` : "";
+      openTelegram(
+        C.club.managerTelegram,
+        `хочу в клуб ${C.club.name}!${u ? "\nя: " + u : ""}${power() ? "\nмоя суперсила: " + power().title : ""}`
+      );
+      renderClub();
     };
-    fetch(C.club.leadWebhook, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }).catch(() => {});
   }
 
   // ---------- Profile ----------
   function renderProfile() {
-    const tier = currentTier();
-    const pending = state.application && tier.id !== "guest";
-    $("#member-card").innerHTML = `
-      <div class="mc-top">
-        <div class="mc-logo">СУПЕР<span class="gold">Ы</span>.</div>
-        <div class="mc-tier">${esc(tier.name)}</div>
-      </div>
-      <div>
-        <div class="mc-name">${esc(userName())}</div>
-        <div class="mc-sub">
-          <span>№ <b>${esc(state.memberNo)}</b></span>
-          <span>${pending ? "Заявка на рассмотрении" : "Статус активен"}</span>
-        </div>
+    $("#profile-name").textContent = `привет, ${userName()}`;
+    $("#profile-stats").innerHTML = `
+      <div><b>${levelsComplete()}</b><span>уровней</span></div>
+      <div><b>${doneTopics()}</b><span>уроков</span></div>
+      <div><b>${Math.round((doneTopics() / totalTopics) * 100)}%</b><span>пути</span></div>`;
+    const p = power();
+    $("#profile-power").innerHTML = `
+      <div class="power-row">
+        <span class="num">${p ? `<i class="fas ${esc(p.icon)}"></i>` : "?"}</span>
+        <div class="pr-text"><small>суперсила</small><b>${p ? esc(p.title) : "не выбрана"}</b></div>
+        <button class="link" data-go="powers">${p ? "сменить" : "выбрать"} →</button>
       </div>`;
-
-    const mine = upcoming().filter((e) => isRegistered(e.id));
-    $("#my-events").innerHTML = mine.length
-      ? mine.map(eventCard).join("")
-      : `<div class="empty">Вы пока никуда не записаны.<br><br><button class="link" data-go="events">Смотреть события →</button></div>`;
+    $("#footnote").textContent = `${C.club.name} · ${C.club.handle}`;
   }
 
-  function initProfile() {
-    $("#contact-manager").href = `https://t.me/${C.club.managerTelegram}`;
-    $("#contact-manager").onclick = (e) => { e.preventDefault(); openTelegram(C.club.managerTelegram); };
-    $("#contact-email").href = `mailto:${C.club.email}`;
-    $("#reset-data").onclick = () => {
-      const doReset = () => {
-        state = defaultState();
-        save();
-        renderHome();
-        renderProfile();
-        toast("Данные сброшены");
-      };
-      if (tg && inTelegram && tg.showConfirm) tg.showConfirm("Сбросить записи и заявку?", (yes) => yes && doReset());
-      else if (confirm("Сбросить записи и заявку?")) doReset();
-    };
+  $("#contact-manager").onclick = () => openTelegram(C.club.managerTelegram);
+  $("#reset-data").onclick = () => {
+    const doReset = () => { state = defaultState(); save(); render(); toast("прогресс сброшен"); };
+    if (inTelegram && tg.showConfirm) tg.showConfirm("сбросить прогресс?", (ok) => ok && doReset());
+    else if (confirm("сбросить прогресс?")) doReset();
+  };
 
-    if (tgUser && tgUser.photo_url) {
-      $("#top-avatar").src = tgUser.photo_url;
-      $("#top-avatar").hidden = false;
-      $("#top-avatar-icon").hidden = true;
-    }
+  // ---------- Render ----------
+  function render() {
+    if (current === "home") renderHome();
+    if (current === "path") renderMap();
+    if (current === "level") renderLevel();
+    if (current === "powers") renderPowers();
+    if (current === "club") renderClub();
+    if (current === "profile") renderProfile();
   }
 
-  // ---------- Boot ----------
-  renderHome();
-  renderEvents();
-  renderMembers();
-  initJoin();
-  initProfile();
+  render();
   if (tg && tg.BackButton) tg.BackButton.hide();
 
-  // Deep link: t.me/<bot>/<app>?startapp=ev-1 → сразу открыть событие
-  const startParam = (inTelegram && tg.initDataUnsafe.start_param) || new URLSearchParams(location.search).get("startapp");
-  if (startParam && C.events.some((e) => e.id === startParam)) openEvent(startParam);
+  // Deep link: t.me/<bot>/<app>?startapp=level-5 → сразу открыть уровень
+  const sp = (inTelegram && tg.initDataUnsafe.start_param) || new URLSearchParams(location.search).get("startapp");
+  const m = sp && /^level-(\d+)$/.exec(sp);
+  if (m && C.path.some((l) => l.n === +m[1])) openLevel(+m[1]);
+  else if (sp === "club") go("club");
 })();
