@@ -13,102 +13,29 @@
 </head>
 <body>
   <main id="app">
-    <!-- HOME -->
-    <section class="screen active" data-screen="home">
-      <div class="container">
-        <div class="topline">
-          <span class="eyebrow"><i class="dot"></i> клуб по подписке</span>
-          <span class="eyebrow muted" id="handle"></span>
-        </div>
-
-        <h1 class="logo-title" id="club-name"></h1>
-        <p class="lead" id="club-subtitle"></p>
-
-        <!-- Hero lime block: current step -->
-        <div class="lime-block halftone" id="continue-card"></div>
-
-        <div class="section-head">
-          <span class="eyebrow"><i class="dot"></i> формула клуба</span>
-        </div>
-        <div class="formula" id="formula"></div>
-
-        <div class="section-head">
-          <span class="eyebrow"><i class="dot"></i> 10 · клуб суперов</span>
-          <button class="link" data-go="club">все →</button>
-        </div>
-        <div id="feed-preview"></div>
-
-        <div class="quote-card">
-          <span class="pill pill-lime">▸▸ мудрость мастера</span>
-          <p class="quote" id="quote"></p>
-        </div>
-      </div>
-    </section>
-
-    <!-- PATH (mind map) -->
-    <section class="screen" data-screen="path">
-      <div class="container">
-        <span class="eyebrow"><i class="dot"></i> путь суперов · 0–10</span>
-        <h2 class="page-title">твой путь в мире ai</h2>
-        <div class="bar"></div>
-        <div class="map" id="map"></div>
-      </div>
-    </section>
-
-    <!-- LEVEL DETAIL -->
-    <section class="screen" data-screen="level">
-      <div class="container" id="level-detail"></div>
-    </section>
-
-    <!-- POWERS -->
-    <section class="screen" data-screen="powers">
-      <div class="container">
-        <span class="eyebrow"><i class="dot"></i> 2 · оцифровка себя</span>
-        <h2 class="page-title">выбери суперсилу</h2>
-        <p class="lead">одна сила — один фокус. путь подсветит твои уровни, остальные останутся открыты.</p>
-        <div class="powers" id="powers"></div>
-      </div>
-    </section>
-
-    <!-- CLUB -->
-    <section class="screen" data-screen="club">
-      <div class="container">
-        <span class="eyebrow"><i class="dot"></i> 10 · клуб суперов</span>
-        <h2 class="page-title">жизнь клуба</h2>
-        <div class="bar"></div>
-        <div class="stack" id="feed"></div>
-
-        <div class="lime-block halftone mt" id="sub-card"></div>
-      </div>
-    </section>
-
-    <!-- PROFILE -->
-    <section class="screen" data-screen="profile">
-      <div class="container">
-        <span class="eyebrow"><i class="dot"></i> профиль</span>
-        <h2 class="page-title" id="profile-name"></h2>
-        <div class="bar"></div>
-
-        <div class="card stats" id="profile-stats"></div>
-
-        <div class="card mt" id="profile-power"></div>
-
-        <div class="stack gap-sm mt">
-          <button class="row-link card" data-go="club"><i class="fas fa-crown lime"></i><span>подписка</span><i class="fas fa-chevron-right"></i></button>
-          <button class="row-link card" id="contact-manager"><i class="fab fa-telegram-plane lime"></i><span>написать мастеру</span><i class="fas fa-chevron-right"></i></button>
-          <button class="row-link card" id="reset-data"><i class="fas fa-rotate-left lime"></i><span>сбросить прогресс</span><i class="fas fa-chevron-right"></i></button>
-        </div>
-        <p class="footnote" id="footnote"></p>
-      </div>
-    </section>
+    <section class="screen" data-screen="onboarding" data-fullscreen></section>
+    <section class="screen" data-screen="home"></section>
+    <section class="screen" data-screen="path"></section>
+    <section class="screen" data-screen="level"></section>
+    <section class="screen" data-screen="powers"></section>
+    <section class="screen" data-screen="paywall" data-fullscreen></section>
+    <section class="screen" data-screen="club"></section>
+    <section class="screen" data-screen="profile"></section>
   </main>
 
-  <nav class="tabbar">
-    <button class="tab active" data-go="home"><i class="fas fa-house"></i><span>главная</span></button>
+  <nav class="tabbar" id="tabbar">
+    <button class="tab" data-go="home"><i class="fas fa-house"></i><span>главная</span></button>
     <button class="tab" data-go="path"><i class="fas fa-diagram-project"></i><span>путь</span></button>
     <button class="tab" data-go="club"><i class="fas fa-users"></i><span>клуб</span></button>
     <button class="tab" data-go="profile"><i class="fas fa-user"></i><span>профиль</span></button>
   </nav>
+
+  <!-- Bottom sheet: урок / код доступа -->
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-grip"></div>
+    <div id="sheet-body"></div>
+  </div>
 
   <div class="toast" id="toast"></div>
 
